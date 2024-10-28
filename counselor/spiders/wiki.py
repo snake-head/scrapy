@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 import scrapy
 from scrapy.selector import Selector
-from items import ContentItem
-from queue import Queue
+from counselor.items import ContentItem
+from counselor.queue1 import Queue
 import time
-from langconv import *
-from filter_words import filter_url
+from counselor.langconv import *
+from counselor.filter_words import filter_url
 
 def Traditional2Simplified(sentence):
     '''
@@ -43,7 +43,7 @@ class WiKiSpider(scrapy.Spider):
     urlQueue = Queue()
     name = 'wikipieda_spider'
     allowed_domains = ['zh.wikipedia.org']
-    start_urls = ['https://zh.wikipedia.org/wiki/Category:%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BC%96%E7%A8%8B']
+    start_urls = ['https://zh.wikipedia.org/wiki/%E8%83%B8%E9%83%A8X%E5%85%89']
     custom_settings = {
         'ITEM_PIPELINES': {'counselor.pipelines.WikiPipeline': 800}
     }
@@ -81,7 +81,8 @@ class WiKiSpider(scrapy.Spider):
         sel = Selector(response)
         this_url = response.url
         self.urlQueue.delete_candidate(this_url)
-        search = sel.xpath("//div[@id='content']")
+        search = sel.xpath("//main[@id='content']")
+        print(search)
         category_entity = search.xpath("//h1[@id='firstHeading']/text()").extract_first()
         candidate_lists_ = search.xpath("//div[@class='mw-category-generated']//a/@href").extract()
         candidate_lists = []
@@ -126,11 +127,11 @@ class WiKiSpider(scrapy.Spider):
         this_url = response.url
         self.urlQueue.delete_candidate(this_url)
         # print('this_url=', this_url)
-        search = sel.xpath("//div[@id='content']")
-        content_entity = search.xpath("//h1[@id='firstHeading']/text()").extract_first()
+        search = sel.xpath("//main[@id='content']")
+        content_entity = search.xpath("//h1[@id='firstHeading']/span[@class='mw-page-title-main']/text()").extract_first()
         content_entity = Traditional2Simplified(content_entity)
-        content_page = search.xpath("//div[@id='bodyContent']//div[@id='mw-content-text']//div[@class='mw-parser-output']").extract_first()# 将带有html的标签的整个数据拿下，后期做处理
-        cates = search.xpath("//div[@id='catlinks']//ul//a/text()").extract()
+        content_page = search.xpath("//div[@id='bodyContent']//div[@id='mw-content-text']//div[@class='mw-content-ltr mw-parser-output']").extract_first()# 将带有html的标签的整个数据拿下，后期做处理
+        cates = search.xpath("//ul[@id='mw-panel-toc-list']//div[@class='vector-toc-text']//span[not(@class)]/text()").extract()
         # candidate_lists_ = search.xpath("//div[@id='bodyContent']//*[@id='mw-content-text' and not(@class='references') and not(@role='presentation')]//a/@href").extract()
         # candidate_lists = []
         # 百科页面有许多超链接是锚链接，需要过滤掉
@@ -155,13 +156,14 @@ class WiKiSpider(scrapy.Spider):
             if filter(cate):
                 is_cates_filter = True
                 break
-        if is_url_filter == False and is_cates_filter == False:
-            counselor_item['content_entity'] = content_entity.replace(':Category', '')
-            counselor_item['category'] = '\t'.join(cates)
-            counselor_item['time'] = str(time.time())
-            counselor_item['url'] = this_url
-            counselor_item['content'] = str(content_page)
-            return counselor_item
+        # if is_url_filter == False and is_cates_filter == False:
+        counselor_item['content_entity'] = content_entity.replace(':Category', '')
+        counselor_item['category'] = '\t'.join(cates)
+        counselor_item['time'] = str(time.time())
+        counselor_item['url'] = this_url
+        counselor_item['content'] = str(content_page)
+        print(counselor_item)
+        return counselor_item
 
         # dir = '../origin_page/'
         # with open(dir + counselor_item['content_entity'] + '(' + counselor_item['time'] + ')' + '.txt', 'w', encoding='utf-8') as fw:

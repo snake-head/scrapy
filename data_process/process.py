@@ -141,16 +141,29 @@ def extract_paragraph(content):
                 frag_i += 1
         return text_process
 
-    paragraph = content.xpath("./p|./h2|./h3|./ul|./ol|./dl|./pre")
+    def extract_references(content):
+        note = content.xpath("//div[@id='references-NoteFoot']//span[@class='reference-text']/text()")
+        ref = content.xpath("//div[@class='reflist']//span[@class='reference-text']")
+
+    extract_references(content)
+    paragraph = content.xpath("./p|./div/h2|./div/h3|./ul|./ol|./dl|./pre")
     passage = {'abstract':[]} # 整个文章所有文本，。维基百科的文本部分一开始默认是摘要
-    sub_content = dict() # 保存每个子标题下的文本
+    sub_content = list() # 保存每个子标题下的文本
     entities = [] # 保存所有实体
     sub_title = '' # 保存当前的子标题，一开始先是p标签，则视为摘要，后面出现一次h3则视为子标题，在下一次h3出现之前都视为该子标题下的内容
+    pre_tag = ''
+    pre_title_tag = ''
     for ei, i in enumerate(paragraph):
         tag = i.tag # 获得当前是什么标签
         text_process = []
         if tag in ['h2', 'h3']: # 说明当前是一个子标题
+            if pre_tag in ['h2', 'h3']:
+                # 说明上一个标题的内容是空的
+                if not any(sub_title in item.get('title', '') for item in sub_content):
+                    sub_content.append({'title': sub_title, 'tag': pre_tag, 'content': []})
             sub_title = Traditional2Simplified(''.join(i.xpath(".//text()")).strip().replace("[编辑]", ""))
+            pre_tag = tag
+            pre_title_tag = tag
             continue
         if tag in ['p', 'ul', 'ol', 'dl']: # 夹在公式的文本
             text = i.xpath(".//text() | ./span[@class='mwe-math-element']")
@@ -165,16 +178,19 @@ def extract_paragraph(content):
         else: #说明当前属于某个子标题
             if len(text_process) == 0:
                 continue
-            if sub_title not in sub_content.keys():
-                sub_content[sub_title] = []
-            sub_content[sub_title].append(text_process)
+            if not any(sub_title in item.get('title', '') for item in sub_content):
+                sub_content.append({'title': sub_title,'tag': pre_title_tag, 'content': []})
+            for item in sub_content:
+                if item['title'] == sub_title:
+                    item['content'].append(text_process)
+        pre_tag = tag
     passage['paragraphs'] = sub_content
     passage['entities'] = set(entities)
     return passage
 
 def process_html(content):
     content = etree.HTML(content) # lxml的etree类的HTML可以补全html标签，并生成python对象
-    content = content.xpath("//div[@class='mw-parser-output']")[0]
+    content = content.xpath("//div[@class='mw-content-ltr mw-parser-output']")[0]
     ##### 维基百科页面中的侧边栏中有一些结构化的表，table表的class="infobox"，可以直接取来作为结构化的数据，用于知识图谱
     infobox_know = extract_infobox(content)
     ##### 维基百科的每个内容最后一栏叫做相关条目（查，论，编）（如果存在的话）一般会列出与当前实体有关的其他实体。表头一般是整个大类，表格
@@ -209,12 +225,13 @@ def read_files(orgin_page, save_path):
         entity_title = Traditional2Simplified(lines[0][3:].replace('\n', ''))
         category_list = Traditional2Simplified(lines[1][3:].replace('\n', '').split('\t'))
 
-        if filter(entity_title, category_list): # 如果实体标题或分类中包含一些过滤词，则不再处理当前文本
-            continue
+        # if filter(entity_title, category_list): # 如果实体标题或分类中包含一些过滤词，则不再处理当前文本
+        #     continue
         url = lines[2][5:].replace('\n', '')
         time = lines[3][5:].replace('\n', '')
         content = ''.join(lines[5:]).replace('\n', '')
         infobox_know, navbox_know, passage = process_html(content)
+        passage['entities'] = list(passage['entities'])
         knowledge = dict()
         knowledge['entity'] = entity_title
         knowledge['category'] = category_list
@@ -222,12 +239,12 @@ def read_files(orgin_page, save_path):
         knowledge['time'] = time
         knowledge['structure_know'] = infobox_know # 维基百科中的infobox最终定义为该实体的结构化知识
         knowledge['corrseponding_know'] = navbox_know # 维基百科中的navbox最终定义与该实体有关的实体的结构化知识
-        knowledge['smi-structure_know'] = passage # 维基百科中的段落被定位为该实体的半结构化知识
+        knowledge['smi_structure_know'] = passage # 维基百科中的段落被定位为该实体的半结构化知识
         wiki_knowledge.append(knowledge)
         num += 1
-        if num%500 == 0: # 每隔一段时间保存一次防止中途报错而导致前面的数据丧失
-            np.save(save_path + "wiki_knowledge.npy", wiki_knowledge)
-    np.save(save_path + "wiki_knowledge.npy", wiki_knowledge)
+        with open(save_path + entity_title + '.json', "w") as json_file:
+            json.dump(knowledge, json_file, indent=4, ensure_ascii=False)
+    # np.save(save_path + "wiki_knowledge.npy", wiki_knowledge)
     print("已完成处理所有维基百科知识，总数量为{}".format(len(wiki_knowledge)))
 
 
